@@ -1,8 +1,9 @@
 import sqlite3
 import tkinter as tk
-from tkinter import messagebox
+from tkinter import messagebox, ttk
 
 DB_PATH = "cast_management.db"
+STORE_OPTIONS = ["池袋", "新宿", "大阪", "錦糸町", "船橋", "五反田"]
 
 
 def init_db():
@@ -20,8 +21,19 @@ def init_db():
         )
 
 
-def fetch_all():
+def fetch_all(query=None):
     with sqlite3.connect(DB_PATH) as conn:
+        if query:
+            like_query = f"%{query}%"
+            return conn.execute(
+                """
+                SELECT id, store, name, age, note
+                FROM girls
+                WHERE store LIKE ? OR name LIKE ? OR note LIKE ?
+                ORDER BY store, name
+                """,
+                (like_query, like_query, like_query),
+            ).fetchall()
         return conn.execute(
             "SELECT id, store, name, age, note FROM girls ORDER BY store, name"
         ).fetchall()
@@ -62,6 +74,8 @@ class CastManagementApp(tk.Tk):
         self.name_var = tk.StringVar()
         self.age_var = tk.StringVar()
         self.note_var = tk.StringVar()
+        self.search_var = tk.StringVar()
+        self.current_items = []
 
         self.create_widgets()
         self.refresh_list()
@@ -73,6 +87,20 @@ class CastManagementApp(tk.Tk):
         list_frame.pack(side=tk.LEFT, fill=tk.BOTH)
         form_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
 
+        search_frame = tk.Frame(list_frame)
+        search_frame.pack(anchor="w", fill=tk.X)
+
+        tk.Label(search_frame, text="検索").pack(side=tk.LEFT)
+        tk.Entry(search_frame, textvariable=self.search_var, width=18).pack(
+            side=tk.LEFT, padx=4
+        )
+        tk.Button(search_frame, text="検索", command=self.refresh_list).pack(
+            side=tk.LEFT
+        )
+        tk.Button(search_frame, text="クリア", command=self.clear_search).pack(
+            side=tk.LEFT, padx=4
+        )
+
         tk.Label(list_frame, text="登録一覧").pack(anchor="w")
         self.listbox = tk.Listbox(list_frame, width=32, height=18)
         self.listbox.pack(side=tk.LEFT, fill=tk.BOTH)
@@ -83,9 +111,14 @@ class CastManagementApp(tk.Tk):
         self.listbox.config(yscrollcommand=scrollbar.set)
 
         tk.Label(form_frame, text="店舗名").grid(row=0, column=0, sticky="w")
-        tk.Entry(form_frame, textvariable=self.store_var, width=30).grid(
-            row=0, column=1, pady=4
+        store_combo = ttk.Combobox(
+            form_frame,
+            textvariable=self.store_var,
+            width=28,
+            state="readonly",
+            values=STORE_OPTIONS,
         )
+        store_combo.grid(row=0, column=1, pady=4)
 
         tk.Label(form_frame, text="名前").grid(row=1, column=0, sticky="w")
         tk.Entry(form_frame, textvariable=self.name_var, width=30).grid(
@@ -120,7 +153,9 @@ class CastManagementApp(tk.Tk):
 
     def refresh_list(self):
         self.listbox.delete(0, tk.END)
-        for girl_id, store, name, age, note in fetch_all():
+        query = self.search_var.get().strip()
+        self.current_items = fetch_all(query=query if query else None)
+        for girl_id, store, name, age, note in self.current_items:
             display = f"{store} | {name}"
             if age:
                 display += f" ({age})"
@@ -137,12 +172,11 @@ class CastManagementApp(tk.Tk):
             return
 
         index = selection[0]
-        items = fetch_all()
         record_index = index // 3
-        if record_index >= len(items):
+        if record_index >= len(self.current_items):
             return
 
-        girl_id, store, name, age, note = items[record_index]
+        girl_id, store, name, age, note = self.current_items[record_index]
         self.selected_id = girl_id
         self.store_var.set(store)
         self.name_var.set(name)
@@ -201,6 +235,10 @@ class CastManagementApp(tk.Tk):
         self.age_var.set("")
         self.note_var.set("")
         self.listbox.selection_clear(0, tk.END)
+
+    def clear_search(self):
+        self.search_var.set("")
+        self.refresh_list()
 
 
 def main():
